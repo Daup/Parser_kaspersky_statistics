@@ -1,13 +1,17 @@
-# import multiprocessing
-# import threading
+import multiprocessing
+import threading
 import lxml
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup
 from urllib.request import urlopen
 
-URL_list_of_countries = 'https://statistics.securelist.com/countries'
+
+# URL_list_of_countries = 'https://statistics.securelist.com/countries'
 URL_list_of_countries_ru = 'https://statistics.securelist.com/ru/countries'
+value = []
+data = []
+country = []
 
 
 def get_html(url):
@@ -32,34 +36,34 @@ def get_link_countries(url=URL_list_of_countries_ru):
 
 
 def get_country(url):
-    country = str(url)
-    country = country.replace('https://statistics.securelist.com/ru/country/', '')
-    country = country.replace('/on-access-scan/month', '')
-    country = country.replace('%20', '_')
-    country = country.replace('/intrusion-detection-scan/month', '')
-    return country
+    countries = str(url)
+    countries = countries.replace('https://statistics.securelist.com/ru/country/', '')
+    countries = countries.replace('/on-access-scan/month', '')
+    countries = countries.replace('%20', '_')
+    countries = countries.replace('/intrusion-detection-scan/month', '')
+    return countries
 
 
 def get_value_table(url):
     soup = BeautifulSoup(get_html(url), 'lxml')
     table = soup.find(name='div', class_='container', id='chart-wrapper')
-    value = table.get('data-chart')
-    value = value.replace('[', '')
-    value = value.replace(']', '')
-    value = value.replace('{', '')
-    value = value.replace('}', '')
-    value = value.replace('"', '')
-    value = value.replace('value:', '')
-    value = value.replace('date:', '')
-    value = value.split(',')
-    return value
+    meaning = table.get('data-chart')
+    meaning = meaning.replace('[', '')
+    meaning = meaning.replace(']', '')
+    meaning = meaning.replace('{', '')
+    meaning = meaning.replace('}', '')
+    meaning = meaning.replace('"', '')
+    meaning = meaning.replace('value:', '')
+    meaning = meaning.replace('date:', '')
+    meaning = meaning.split(',')
+    return meaning
 
 
-def len_data():  # list = get_link_countries()
+def len_data():
     number = 0
     list_data = get_link_countries()
-    for i in list_data:
-        print('index: {} len {}'.format(number, len(get_value_table(i))))
+    for item in list_data:
+        print('index: {} len {}'.format(number, len(get_value_table(item))))
         number += 1
 
 
@@ -67,30 +71,41 @@ def work_with_xlsx(item, url):
     len_item = len(item)
     country = [get_country(url)]
     if len_item == 1:
-        value = ['нет данных']
+        value = ['no data']
         data = ['2000-01-01 00:00']
-        # df = pd.DataFrame({'value': value, 'data': data,'country': country})
     else:
         value = item[::2]
         data = item[1::2]
-        # df = pd.DataFrame({'value': value, 'data': data, 'country': country})
+
     return value, data, country
+
+
+def main_def(urls):
+    item = get_value_table(urls)
+    value_i, data_i, country_i = work_with_xlsx(item, urls)
+    return value_i, data_i, country_i
+
+
+def end_def(response):
+    global value, data, country
+    count = []
+    for i in response[0]:
+        value.append(i)
+        count.append(i)
+    for i in response[1]:
+        data.append(i)
+    country += response[2] * len(count)
 
 
 if __name__ == '__main__':
     list = get_link_countries()
     df = pd.read_excel('D:\Project\parserForNirs\dataframe.xlsx')
 
-    value = []
-    data = []
-    country = []
+    with multiprocessing.Pool(multiprocessing.cpu_count() * 3) as p:
+        for i in list:
+            p.apply_async(main_def, args=(i,), callback=end_def)
+        p.close()
+        p.join()
 
-    for urls in list:
-        item = get_value_table(urls)
-        value_i, data_i, country_i = work_with_xlsx(item, urls)
-        value += value_i
-        data += data_i
-        country += country_i * len(value_i)
-
-    df = pd.DataFrame({'value': value, 'data': data, 'country': country})  # , 'country': country
+    df = pd.DataFrame({'value': value, 'data': data, 'country': country})
     df.to_excel('D:\Project\parserForNirs\dataframe.xlsx', index=False)

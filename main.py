@@ -6,19 +6,25 @@ import numpy as np
 from bs4 import BeautifulSoup
 from urllib.request import urlopen
 
-
 # URL_list_of_countries = 'https://statistics.securelist.com/countries'
 URL_list_of_countries_ru = 'https://statistics.securelist.com/ru/countries'
+# списки для графика
 value = []
 data = []
 country = []
+# списки для таблицы угроз
+danger = []
+rang = []
+percent = []
 
 
+# get_html - функция для получения html
 def get_html(url):
     r = urlopen(url=url).read().decode('UTF-8')
     return r
 
 
+# get_link_countries - функция для получения ссылок стран
 def get_link_countries(url=URL_list_of_countries_ru):
     soup = BeautifulSoup(get_html(url), 'lxml')
     list_table = soup.find_all(name='a', class_='card')
@@ -35,6 +41,7 @@ def get_link_countries(url=URL_list_of_countries_ru):
     return list_link_countries_month
 
 
+# get_country - функция для получения названия страны
 def get_country(url):
     countries = str(url)
     countries = countries.replace('https://statistics.securelist.com/ru/country/', '')
@@ -44,6 +51,7 @@ def get_country(url):
     return countries
 
 
+# get_value_table - функция для получения значения таблицы (значения будут получены, как один единый список)
 def get_value_table(url):
     soup = BeautifulSoup(get_html(url), 'lxml')
     table = soup.find(name='div', class_='container', id='chart-wrapper')
@@ -59,6 +67,30 @@ def get_value_table(url):
     return meaning
 
 
+# get_danger_table - функция для получения значений (топ-10 обнаруженных угроз)
+def get_danger_table(url):
+    soup = BeautifulSoup(get_html(url), 'lxml')
+    table = soup.find_all(name='div', class_='p-2 d-flex align-items-center')
+    danger = []
+    rang = []
+    percent = []
+    for item in table:
+        danger += item.find(name='span')
+        percent += item.find(name='div', class_='ml-auto list-value')
+    count = len(danger)
+    country = [get_country(url)]
+    if count != 0:
+        for i in range(1, count + 1):
+            rang.append(i)
+    else:
+        danger = ['nope']
+        rang = ['0']
+        percent = ['0']
+
+    return rang, danger, percent, country
+
+
+# len_data - функция счета размеров таблицы для каждой страны
 def len_data():
     number = 0
     list_data = get_link_countries()
@@ -67,6 +99,8 @@ def len_data():
         number += 1
 
 
+# work_with_xlsx - функция для получения value, data, country
+# item - список полученный в функции  get_value_table
 def work_with_xlsx(item, url):
     len_item = len(item)
     country = [get_country(url)]
@@ -86,6 +120,7 @@ def main_def(urls):
     return value_i, data_i, country_i
 
 
+# end_def - функция записи значений в список value, data, country
 def end_def(response):
     global value, data, country
     count = []
@@ -97,15 +132,52 @@ def end_def(response):
     country += response[2] * len(count)
 
 
+def end_danger_def(response):
+    global rang, danger, percent, country
+    count = []
+    print(response)
+    for i in response[0]:
+        danger.append(i)
+        count.append(i)
+    for i in range(1, len(count) + 1):
+        rang.append(i)
+    for i in response[1]:
+        percent.append(i)
+    country += response[2] * len(count)
+
 if __name__ == '__main__':
-    list = get_link_countries()
-    df = pd.read_excel('D:\Project\parserForNirs\dataframe.xlsx')
+    work = 0
+    if work == 1:
+        list = get_link_countries()
+        df = pd.read_excel('D:\Project\parserForNirs\dataframe.xlsx')
 
-    with multiprocessing.Pool(multiprocessing.cpu_count() * 3) as p:
+        with multiprocessing.Pool(multiprocessing.cpu_count() * 3) as p:
+            for i in list:
+                p.apply_async(main_def, args=(i,), callback=end_def)
+            p.close()
+            p.join()
+
+        df = pd.DataFrame({'value': value, 'data': data, 'country': country})
+        df.to_excel('D:\Project\parserForNirs\dataframe.xlsx', index=False)
+    else:
+        list = get_link_countries()
+        print(list)
+        df = pd.read_excel('D:\Project\parserForNirs\dataframe_danger.xlsx')
+        #with multiprocessing.Pool(multiprocessing.cpu_count() * 3) as p:
+        #    for i in list:
+        #        p.apply_async(get_danger_table, args=(i,), callback=end_danger_def)
+        #    p.close()
+        #    p.join()
         for i in list:
-            p.apply_async(main_def, args=(i,), callback=end_def)
-        p.close()
-        p.join()
+            rang_i, danger_i, percent_i, country_i = get_danger_table(i)
+            for i in rang_i:
+                rang.append(i)
+            for i in danger_i:
+                danger.append(i)
+            for i in percent_i:
+                percent.append(i)
+            country += country_i * len(danger_i)
 
-    df = pd.DataFrame({'value': value, 'data': data, 'country': country})
-    df.to_excel('D:\Project\parserForNirs\dataframe.xlsx', index=False)
+        df = pd.DataFrame({'rang': rang, 'name_danger': danger, 'percent': percent, 'country': country})
+        df.to_excel('D:\Project\parserForNirs\dataframe_danger.xlsx', index=False)
+
